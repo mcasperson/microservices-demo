@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-lambda-go/events"
 	"net/http"
 	"os"
 	"time"
@@ -33,6 +34,8 @@ import (
 	"go.opencensus.io/stats/view"
 	"go.opencensus.io/trace"
 	"google.golang.org/grpc"
+
+	"github.com/awslabs/aws-lambda-go-api-proxy/gorillamux"
 )
 
 const (
@@ -80,8 +83,25 @@ type frontendServer struct {
 	adSvcConn *grpc.ClientConn
 }
 
+func HandleRequest(ctx context.Context, event events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	_, handler := entry(ctx)
+	adapter := gorillamux.New(handler)
+	return adapter.ProxyWithContext(ctx, event)
+}
+
 func main() {
-	ctx := context.Background()
+	addr := os.Getenv("LISTEN_ADDR")
+	srvPort := port
+	if os.Getenv("PORT") != "" {
+		srvPort = os.Getenv("PORT")
+	}
+	log, handler := entry(context.Background())
+
+	log.Infof("starting server on " + addr + ":" + srvPort)
+	log.Fatal(http.ListenAndServe(addr+":"+srvPort, handler))
+}
+
+func entry(ctx context.Context) (*logrus.Logger, *mux.Router) {
 	log := logrus.New()
 	log.Level = logrus.DebugLevel
 	log.Formatter = &logrus.JSONFormatter{
@@ -108,11 +128,6 @@ func main() {
 		log.Info("Profiling disabled.")
 	}
 
-	srvPort := port
-	if os.Getenv("PORT") != "" {
-		srvPort = os.Getenv("PORT")
-	}
-	addr := os.Getenv("LISTEN_ADDR")
 	svc := new(frontendServer)
 	mustMapEnv(&svc.productCatalogSvcAddr, "PRODUCT_CATALOG_SERVICE_ADDR")
 	mustMapEnv(&svc.currencySvcAddr, "CURRENCY_SERVICE_ADDR")
@@ -143,15 +158,27 @@ func main() {
 	r.HandleFunc("/robots.txt", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "User-agent: *\nDisallow: /") })
 	r.HandleFunc("/_healthz", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "ok") })
 
-	var handler http.Handler = r
-	handler = &logHandler{log: log, next: handler} // add logging
-	handler = ensureSessionID(handler)             // add session ID
-	handler = &ochttp.Handler{                     // add opencensus instrumentation
-		Handler:     handler,
-		Propagation: &b3.HTTPFormat{}}
+	r.Use(
+		func(next http.Handler) http.Handler {
+			logHandler := &logHandler{log: log, next: next}
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				logHandler.ServeHTTP(w, r)
+			})
+		},
+		func(next http.Handler) http.Handler {
+			return ensureSessionID(next)
+		},
+		func(next http.Handler) http.Handler {
+			ocHttpHandler := &ochttp.Handler{
+				Handler:     next,
+				Propagation: &b3.HTTPFormat{}}
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ocHttpHandler.ServeHTTP(w, r)
+			})
+		},
+	)
 
-	log.Infof("starting server on " + addr + ":" + srvPort)
-	log.Fatal(http.ListenAndServe(addr+":"+srvPort, handler))
+	return log, r
 }
 
 func initJaegerTracing(log logrus.FieldLogger) {
