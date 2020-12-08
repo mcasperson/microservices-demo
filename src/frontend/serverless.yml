@@ -1,0 +1,17 @@
+service: frontend
+provider:
+  name: aws
+  runtime: go1.x
+  region: us-east-1
+package:
+  exclude:
+    - ./**
+  include:
+    - ./frontend
+functions:
+  lambda-time:
+    handler: frontend
+    events:
+      - http:
+          path: /
+          method: get
