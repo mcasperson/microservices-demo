@@ -3,13 +3,23 @@ provider:
   name: aws
   runtime: go1.x
   region: us-east-1
+  environment:
+    PRODUCT_CATALOG_SERVICE_ADDR: https://1tcnyc11tb.execute-api.us-east-1.amazonaws.com/dev/productcatalog
+    CURRENCY_SERVICE_ADDR: https://1tcnyc11tb.execute-api.us-east-1.amazonaws.com/dev/currencyservice
+    CART_SERVICE_ADDR: https://1tcnyc11tb.execute-api.us-east-1.amazonaws.com/dev/cartservice
+    RECOMMENDATION_SERVICE_ADDR: https://1tcnyc11tb.execute-api.us-east-1.amazonaws.com/dev/recommendationservice
+    CHECKOUT_SERVICE_ADDR: https://1tcnyc11tb.execute-api.us-east-1.amazonaws.com/dev/checkoutservice
+    SHIPPING_SERVICE_ADDR: https://1tcnyc11tb.execute-api.us-east-1.amazonaws.com/dev/shippingservice
+    AD_SERVICE_ADDR: https://1tcnyc11tb.execute-api.us-east-1.amazonaws.com/dev/adservice
 package:
   exclude:
     - ./**
   include:
     - ./frontend
+    - ./static/**
+    - ./templates/**
 functions:
-  lambda-time:
+  frontend:
     handler: frontend
     events:
       - http:

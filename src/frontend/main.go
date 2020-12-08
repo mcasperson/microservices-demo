@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 	"net/http"
 	"os"
 	"time"
@@ -86,10 +87,21 @@ type frontendServer struct {
 func HandleRequest(ctx context.Context, event events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	_, handler := entry(ctx)
 	adapter := gorillamux.New(handler)
-	return adapter.ProxyWithContext(ctx, event)
+	response, err := adapter.ProxyWithContext(ctx, event)
+	response.Headers = make(map[string]string)
+	response.Headers["content-type"] = "text/html"
+	return response, err
 }
 
 func main() {
+	if os.Getenv("LAMBDA_TASK_ROOT") == "" {
+		cliMain()
+	} else {
+		lambda.Start(HandleRequest)
+	}
+}
+
+func cliMain() {
 	addr := os.Getenv("LISTEN_ADDR")
 	srvPort := port
 	if os.Getenv("PORT") != "" {
